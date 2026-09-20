@@ -341,6 +341,22 @@ private fun ZoneRow(
                     )
             )
         }
+        if (zone.exchangeCount > 0) {
+
+            Spacer(
+                modifier = Modifier.height(3.dp)
+            )
+
+            Text(
+                text = "📊 ${zone.exchanges.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color =
+                    if (zone.exchangeCount > 1)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 
