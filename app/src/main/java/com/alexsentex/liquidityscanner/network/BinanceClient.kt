@@ -1,5 +1,6 @@
 package com.alexsentex.liquidityscanner.network
 
+import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
@@ -13,13 +14,13 @@ data class BinanceOrderBookResponse(
 )
 
 data class BinanceDepthUpdate(
-    val e: String?,
-    val E: Long?,
-    val s: String?,
-    val U: Long,
-    val u: Long,
-    val b: List<List<String>>,
-    val a: List<List<String>>
+    @SerializedName("e") val eventType: String?,
+    @SerializedName("E") val eventTime: Long?,
+    @SerializedName("s") val symbol: String?,
+    @SerializedName("U") val firstUpdateId: Long,
+    @SerializedName("u") val finalUpdateId: Long,
+    @SerializedName("b") val bids: List<List<String>>,
+    @SerializedName("a") val asks: List<List<String>>
 )
 
 interface BinanceApi {
