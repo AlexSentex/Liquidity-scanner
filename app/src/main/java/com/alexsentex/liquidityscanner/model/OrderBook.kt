@@ -8,7 +8,8 @@ data class OrderBookResponse(
 
 data class Order(
     val price: Double,
-    val quantity: Double
+    val quantity: Double,
+    val exchange: String = ""
 ) {
 
     val totalUsdt: Double
