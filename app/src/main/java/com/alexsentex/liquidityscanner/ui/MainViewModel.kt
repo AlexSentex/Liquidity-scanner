@@ -3,7 +3,7 @@ package com.alexsentex.liquidityscanner.ui
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.alexsentex.liquidityscanner.model.OrderBookState
-import com.alexsentex.liquidityscanner.repository.OrderBookRepository
+import com.alexsentex.liquidityscanner.repository.MultiExchangeOrderBookRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 class MainViewModel : ViewModel() {
 
     private val repository =
-        OrderBookRepository()
+        MultiExchangeOrderBookRepository()
 
     private val _state =
         MutableStateFlow(
