@@ -16,8 +16,13 @@ data class Order(
 
 data class OrderBookState(
     val currentPrice: Double? = null,
+
     val bids: List<Order> = emptyList(),
     val asks: List<Order> = emptyList(),
+
+    val supportZones: List<LiquidityZone> = emptyList(),
+    val resistanceZones: List<LiquidityZone> = emptyList(),
+
     val isLoading: Boolean = false,
     val error: String? = null,
     val lastUpdateTime: String? = null
