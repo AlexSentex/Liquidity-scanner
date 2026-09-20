@@ -1,4 +1,3 @@
-```kotlin
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -56,4 +55,3 @@ dependencies {
 
     debugImplementation("androidx.compose.ui:ui-tooling")
 }
-```
