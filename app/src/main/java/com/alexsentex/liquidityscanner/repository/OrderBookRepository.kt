@@ -19,10 +19,21 @@ import java.util.Date
 import java.util.Locale
 import kotlin.math.max
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelChildren
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
 class OrderBookRepository {
 
     private val api = BinanceClient.api
     private val client = BinanceClient.webSocketClient
+
+    private val repositoryScope =
+        CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val gson = Gson()
 
@@ -97,15 +108,17 @@ class OrderBookRepository {
     }
 
     fun stop() {
+        repositoryScope.coroutineContext.cancelChildren()
 
         socket?.close(
             1000,
             "Stopping"
         )
-
+        
         socket = null
         initialized = false
-    }
+        
+        }
 
     private suspend fun loadInitialSnapshot() {
 
@@ -368,90 +381,63 @@ class OrderBookRepository {
     }
 
     private fun reconnect() {
-
-        socket?.close(
-            1000,
-            "Resynchronization"
+        socket?.close( 
+            1000, 
+            "Resynchronization" 
         )
-
-        Thread {
-            try {
-
-                Thread.sleep(1000)
-
-                val snapshot =
-                    api.getOrderBook(
-                        symbol = "BTCUSDT",
-                        limit = 1000
-                    )
-
-                synchronized(this) {
-
-                    bids.clear()
-                    asks.clear()
-
-                    snapshot.bids.forEach { item ->
-
-                        if (item.size >= 2) {
-
-                            val price =
-                                item[0].toDoubleOrNull()
-
-                            val quantity =
-                                item[1].toDoubleOrNull()
-
-                            if (
-                                price != null &&
-                                quantity != null &&
-                                quantity > 0.0
-                            ) {
-                                bids[price] = quantity
-                            }
-                        }
-                    }
-
-                    snapshot.asks.forEach { item ->
-
-                        if (item.size >= 2) {
-
-                            val price =
-                                item[0].toDoubleOrNull()
-
-                            val quantity =
-                                item[1].toDoubleOrNull()
-
-                            if (
-                                price != null &&
-                                quantity != null &&
-                                quantity > 0.0
-                            ) {
-                                asks[price] = quantity
-                            }
-                        }
-                    }
-
-                    lastUpdateId =
-                        snapshot.lastUpdateId
-
-                    initialized = true
+        repositoryScope.launch { 
+            try { delay(1000) 
+                val snapshot = 
+                    api.getOrderBook( symbol = "BTCUSDT", limit = 1000 ) 
+                synchronized(this@OrderBookRepository) {
+                    bids.clear() 
+                    asks.clear() 
+                    snapshot.bids.forEach { item -> 
+                        if (item.size >= 2) { 
+                            val price = item[0].toDoubleOrNull() 
+                            val quantity = item[1].toDoubleOrNull() 
+                            if ( 
+                                price != null && 
+                                quantity != null && 
+                                quantity > 0.0 
+                                ) { 
+                                bids[price] = quantity 
+                                } 
+                            } 
+                        } 
+                    
+                        snapshot.asks.forEach {
+                            item -> 
+                            if (item.size >= 2) { 
+                                val price = item[0].toDoubleOrNull() 
+                                val quantity = item[1].toDoubleOrNull() 
+                                if ( 
+                                    price != null && 
+                                    quantity != null && 
+                                    quantity > 0.0 
+                                    ) { 
+                                    asks[price] = quantity 
+                                    } 
+                                } 
+                            } 
+                    
+                            lastUpdateId = snapshot.lastUpdateId 
+                            initialized = true 
+                        } 
+                
+                        recalculateZones() 
+                        connectWebSocket() 
+                    } catch (e: Exception) {
+                        updateState( 
+                            currentState.copy( 
+                                isConnected = false, 
+                                error = e.message 
+                                ?: "Не вдалося синхронізувати стакан" 
+                                ) 
+                            ) 
+                        } 
+                    } 
                 }
-
-                recalculateZones()
-                connectWebSocket()
-
-            } catch (e: Exception) {
-
-                updateState(
-                    currentState.copy(
-                        isConnected = false,
-                        error =
-                            e.message
-                                ?: "Не вдалося синхронізувати стакан"
-                    )
-                )
-            }
-        }.start()
-    }
 
     private fun recalculateZones() {
 
