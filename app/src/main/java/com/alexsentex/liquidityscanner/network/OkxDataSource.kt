@@ -1,7 +1,9 @@
 package com.alexsentex.liquidityscanner.network
 
 import com.alexsentex.liquidityscanner.model.ExchangeOrderBookSnapshot
+import com.alexsentex.liquidityscanner.model.ExchangeTrade
 import com.alexsentex.liquidityscanner.model.NormalizedOrder
+import com.alexsentex.liquidityscanner.model.TradeSide
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -15,17 +17,30 @@ import okhttp3.Response
 import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 
-private data class OkxWsMessage(
+private data class OkxArgPeek(val arg: OkxArg?)
+private data class OkxArg(val channel: String?, val instId: String?)
+
+private data class OkxBookMessage(
     val arg: OkxArg?,
     val action: String?,
     val data: List<OkxBookData>?
 )
 
-private data class OkxArg(val channel: String?, val instId: String?)
-
 private data class OkxBookData(
     val asks: List<List<String>>?,
     val bids: List<List<String>>?
+)
+
+private data class OkxTradeMessage(
+    val arg: OkxArg?,
+    val data: List<OkxTradeItem>?
+)
+
+private data class OkxTradeItem(
+    val px: String?,
+    val sz: String?,
+    val side: String?,
+    val ts: String?
 )
 
 class OkxDataSource : ExchangeDataSource {
@@ -43,14 +58,17 @@ class OkxDataSource : ExchangeDataSource {
     private var socket: WebSocket? = null
 
     private var onUpdate: ((ExchangeOrderBookSnapshot) -> Unit)? = null
+    private var onTrade: ((ExchangeTrade) -> Unit)? = null
     private var onStatus: ((Boolean, String?) -> Unit)? = null
 
     override fun start(
         symbol: String,
         onUpdate: (ExchangeOrderBookSnapshot) -> Unit,
+        onTrade: (ExchangeTrade) -> Unit,
         onStatus: (Boolean, String?) -> Unit
     ) {
         this.onUpdate = onUpdate
+        this.onTrade = onTrade
         this.onStatus = onStatus
         connectSocket(toOkxInstId(symbol))
     }
@@ -80,7 +98,7 @@ class OkxDataSource : ExchangeDataSource {
 
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 webSocket.send(
-                    """{"op":"subscribe","args":[{"channel":"books","instId":"$instId"}]}"""
+                    """{"op":"subscribe","args":[{"channel":"books","instId":"$instId"},{"channel":"trades","instId":"$instId"}]}"""
                 )
                 onStatus?.invoke(true, null)
                 startHeartbeat(webSocket)
@@ -117,24 +135,50 @@ class OkxDataSource : ExchangeDataSource {
         if (text == "pong") return
 
         try {
-            val message = gson.fromJson(text, OkxWsMessage::class.java)
-            if (message.arg?.channel != "books") return
+            val channel = gson.fromJson(text, OkxArgPeek::class.java).arg?.channel ?: return
 
-            val book = message.data?.firstOrNull() ?: return
-
-            synchronized(this) {
-                if (message.action == "snapshot") {
-                    bids.clear()
-                    asks.clear()
-                }
-                book.bids?.let { applyLevels(it, bids) }
-                book.asks?.let { applyLevels(it, asks) }
+            when (channel) {
+                "books" -> handleBook(text)
+                "trades" -> handleTrade(text)
             }
-
-            emitSnapshot()
 
         } catch (e: Exception) {
             onStatus?.invoke(false, e.message ?: "Помилка обробки OKX WebSocket")
+        }
+    }
+
+    private fun handleBook(text: String) {
+        val message = gson.fromJson(text, OkxBookMessage::class.java)
+        val book = message.data?.firstOrNull() ?: return
+
+        synchronized(this) {
+            if (message.action == "snapshot") {
+                bids.clear()
+                asks.clear()
+            }
+            book.bids?.let { applyLevels(it, bids) }
+            book.asks?.let { applyLevels(it, asks) }
+        }
+
+        emitSnapshot()
+    }
+
+    private fun handleTrade(text: String) {
+        val message = gson.fromJson(text, OkxTradeMessage::class.java)
+
+        message.data?.forEach { item ->
+            val price = item.px?.toDoubleOrNull() ?: return@forEach
+            val quantity = item.sz?.toDoubleOrNull() ?: return@forEach
+
+            onTrade?.invoke(
+                ExchangeTrade(
+                    exchangeName = name,
+                    price = price,
+                    quantity = quantity,
+                    side = if (item.side == "buy") TradeSide.BUY else TradeSide.SELL,
+                    timestampMillis = item.ts?.toLongOrNull() ?: System.currentTimeMillis()
+                )
+            )
         }
     }
 
