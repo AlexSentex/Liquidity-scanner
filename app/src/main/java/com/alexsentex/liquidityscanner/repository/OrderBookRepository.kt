@@ -291,7 +291,7 @@ class OrderBookRepository {
                  * до нашого REST snapshot.
                  */
                 if (
-                    update.u <= lastUpdateId
+                    update.finalUpdateId <= lastUpdateId
                 ) {
                     return
                 }
@@ -301,7 +301,7 @@ class OrderBookRepository {
                  * повинна перетинати snapshot.
                  */
                 if (
-                    update.U > lastUpdateId + 1
+                    update.finalUpdateId > lastUpdateId + 1
                 ) {
 
                     initialized = false
@@ -319,7 +319,7 @@ class OrderBookRepository {
                     return
                 }
 
-                update.b.forEach { item ->
+                update.bids.forEach { item ->
 
                     if (item.size < 2) {
                         return@forEach
@@ -340,7 +340,7 @@ class OrderBookRepository {
                     }
                 }
 
-                update.a.forEach { item ->
+                update.asks.forEach { item ->
 
                     if (item.size < 2) {
                         return@forEach
@@ -362,7 +362,7 @@ class OrderBookRepository {
                 }
 
                 lastUpdateId =
-                    update.u
+                    update.finalUpdateId
             }
 
             recalculateZones()
