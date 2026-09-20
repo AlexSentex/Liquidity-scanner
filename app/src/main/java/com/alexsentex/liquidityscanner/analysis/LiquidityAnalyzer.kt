@@ -86,6 +86,12 @@ object LiquidityAnalyzer {
                 abs(centerPrice - currentPrice) /
                     currentPrice * 100.0
 
+            val exchangesInGroup =
+                group
+                    .map { it.exchange }
+                    .filter { it.isNotBlank() }
+                    .distinct()
+
             LiquidityZone(
                 type = type,
 
@@ -110,7 +116,8 @@ object LiquidityAnalyzer {
 
                 observationCount = 1,
 
-                stabilityPercent = 100.0
+                stabilityPercent = 100.0,
+                exchanges = exchangesInGroup
             )
         }
 
