@@ -1,6 +1,7 @@
 package com.alexsentex.liquidityscanner.network
 
 import com.alexsentex.liquidityscanner.model.ExchangeOrderBookSnapshot
+import com.alexsentex.liquidityscanner.model.ExchangeTrade
 
 interface ExchangeDataSource {
 
@@ -9,6 +10,7 @@ interface ExchangeDataSource {
     fun start(
         symbol: String,
         onUpdate: (ExchangeOrderBookSnapshot) -> Unit,
+        onTrade: (ExchangeTrade) -> Unit,
         onStatus: (connected: Boolean, error: String?) -> Unit
     )
 
