@@ -1,104 +1,585 @@
 package com.alexsentex.liquidityscanner.repository
 
 import com.alexsentex.liquidityscanner.analysis.LiquidityAnalyzer
+import com.alexsentex.liquidityscanner.model.LiquidityZone
 import com.alexsentex.liquidityscanner.model.LiquidityZoneType
 import com.alexsentex.liquidityscanner.model.Order
 import com.alexsentex.liquidityscanner.model.OrderBookState
 import com.alexsentex.liquidityscanner.network.BinanceClient
+import com.alexsentex.liquidityscanner.network.BinanceDepthUpdate
+import com.google.gson.Gson
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.Request
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.max
 
 class OrderBookRepository {
 
     private val api = BinanceClient.api
+    private val client = BinanceClient.webSocketClient
 
-    suspend fun getOrderBook(): OrderBookState {
+    private val gson = Gson()
 
-        val response = api.getOrderBook(limit = 100)
+    private val bids =
+        sortedMapOf<Double, Double>(
+            compareByDescending { it }
+        )
 
-        val bids: List<Order> = response.bids.mapNotNull { item ->
+    private val asks =
+        sortedMapOf<Double, Double>()
 
-            if (item.size < 2) {
-                return@mapNotNull null
+    private var lastUpdateId: Long = 0L
+
+    private var initialized = false
+
+    private var socket: WebSocket? = null
+
+    private var currentZoneSize = 500.0
+
+    private var previousSupportZones =
+        emptyList<LiquidityZone>()
+
+    private var previousResistanceZones =
+        emptyList<LiquidityZone>()
+
+    private var currentState =
+        OrderBookState(
+            zoneSize = currentZoneSize
+        )
+
+    private var onStateChanged:
+        ((OrderBookState) -> Unit)? = null
+
+    suspend fun start(
+        zoneSize: Double,
+        callback: (OrderBookState) -> Unit
+    ) {
+
+        currentZoneSize = zoneSize
+        onStateChanged = callback
+
+        withContext(Dispatchers.IO) {
+
+            try {
+
+                loadInitialSnapshot()
+
+                connectWebSocket()
+
+            } catch (e: Exception) {
+
+                updateState(
+                    currentState.copy(
+                        isLoading = false,
+                        isConnected = false,
+                        error =
+                            e.message
+                                ?: "Помилка підключення до Binance"
+                    )
+                )
+            }
+        }
+    }
+
+    fun setZoneSize(
+        zoneSize: Double
+    ) {
+
+        currentZoneSize = zoneSize
+
+        recalculateZones()
+    }
+
+    fun stop() {
+
+        socket?.close(
+            1000,
+            "Stopping"
+        )
+
+        socket = null
+        initialized = false
+    }
+
+    private suspend fun loadInitialSnapshot() {
+
+        val response =
+            api.getOrderBook(
+                symbol = "BTCUSDT",
+                limit = 1000
+            )
+
+        synchronized(this) {
+
+            bids.clear()
+            asks.clear()
+
+            response.bids.forEach { item ->
+
+                if (item.size >= 2) {
+
+                    val price =
+                        item[0].toDoubleOrNull()
+
+                    val quantity =
+                        item[1].toDoubleOrNull()
+
+                    if (
+                        price != null &&
+                        quantity != null &&
+                        quantity > 0.0
+                    ) {
+                        bids[price] = quantity
+                    }
+                }
             }
 
-            val price = item[0].toDoubleOrNull()
-                ?: return@mapNotNull null
+            response.asks.forEach { item ->
 
-            val quantity = item[1].toDoubleOrNull()
-                ?: return@mapNotNull null
+                if (item.size >= 2) {
 
-            Order(
-                price = price,
-                quantity = quantity
-            )
-        }
+                    val price =
+                        item[0].toDoubleOrNull()
 
-        val asks: List<Order> = response.asks.mapNotNull { item ->
+                    val quantity =
+                        item[1].toDoubleOrNull()
 
-            if (item.size < 2) {
-                return@mapNotNull null
+                    if (
+                        price != null &&
+                        quantity != null &&
+                        quantity > 0.0
+                    ) {
+                        asks[price] = quantity
+                    }
+                }
             }
 
-            val price = item[0].toDoubleOrNull()
-                ?: return@mapNotNull null
+            lastUpdateId =
+                response.lastUpdateId
 
-            val quantity = item[1].toDoubleOrNull()
-                ?: return@mapNotNull null
+            initialized = true
+        }
 
-            Order(
-                price = price,
-                quantity = quantity
+        recalculateZones()
+    }
+
+    private fun connectWebSocket() {
+
+        socket?.close(
+            1000,
+            "Reconnect"
+        )
+
+        val request =
+            Request.Builder()
+                .url(
+                    "wss://stream.binance.com:9443/ws/btcusdt@depth@100ms"
+                )
+                .build()
+
+        socket =
+            client.newWebSocket(
+                request,
+                object : WebSocketListener() {
+
+                    override fun onOpen(
+                        webSocket: WebSocket,
+                        response: Response
+                    ) {
+
+                        updateState(
+                            currentState.copy(
+                                isConnected = true,
+                                isLoading = false,
+                                error = null
+                            )
+                        )
+                    }
+
+                    override fun onMessage(
+                        webSocket: WebSocket,
+                        text: String
+                    ) {
+
+                        handleDepthUpdate(text)
+                    }
+
+                    override fun onClosing(
+                        webSocket: WebSocket,
+                        code: Int,
+                        reason: String
+                    ) {
+
+                        updateState(
+                            currentState.copy(
+                                isConnected = false
+                            )
+                        )
+                    }
+
+                    override fun onClosed(
+                        webSocket: WebSocket,
+                        code: Int,
+                        reason: String
+                    ) {
+
+                        updateState(
+                            currentState.copy(
+                                isConnected = false
+                            )
+                        )
+                    }
+
+                    override fun onFailure(
+                        webSocket: WebSocket,
+                        t: Throwable,
+                        response: Response?
+                    ) {
+
+                        updateState(
+                            currentState.copy(
+                                isConnected = false,
+                                error =
+                                    t.message
+                                        ?: "WebSocket error"
+                            )
+                        )
+                    }
+                }
+            )
+    }
+
+    private fun handleDepthUpdate(
+        text: String
+    ) {
+
+        try {
+
+            val update =
+                gson.fromJson(
+                    text,
+                    BinanceDepthUpdate::class.java
+                )
+
+            synchronized(this) {
+
+                if (!initialized) {
+                    return
+                }
+
+                /*
+                 * Ігноруємо події,
+                 * які повністю відбулися
+                 * до нашого REST snapshot.
+                 */
+                if (
+                    update.u <= lastUpdateId
+                ) {
+                    return
+                }
+
+                /*
+                 * Перша актуальна подія
+                 * повинна перетинати snapshot.
+                 */
+                if (
+                    update.U > lastUpdateId + 1
+                ) {
+
+                    initialized = false
+
+                    updateState(
+                        currentState.copy(
+                            isConnected = false,
+                            error =
+                                "Виявлено пропуск даних. Повторна синхронізація..."
+                        )
+                    )
+
+                    reconnect()
+
+                    return
+                }
+
+                update.b.forEach { item ->
+
+                    if (item.size < 2) {
+                        return@forEach
+                    }
+
+                    val price =
+                        item[0].toDoubleOrNull()
+                            ?: return@forEach
+
+                    val quantity =
+                        item[1].toDoubleOrNull()
+                            ?: return@forEach
+
+                    if (quantity == 0.0) {
+                        bids.remove(price)
+                    } else {
+                        bids[price] = quantity
+                    }
+                }
+
+                update.a.forEach { item ->
+
+                    if (item.size < 2) {
+                        return@forEach
+                    }
+
+                    val price =
+                        item[0].toDoubleOrNull()
+                            ?: return@forEach
+
+                    val quantity =
+                        item[1].toDoubleOrNull()
+                            ?: return@forEach
+
+                    if (quantity == 0.0) {
+                        asks.remove(price)
+                    } else {
+                        asks[price] = quantity
+                    }
+                }
+
+                lastUpdateId =
+                    update.u
+            }
+
+            recalculateZones()
+
+        } catch (e: Exception) {
+
+            updateState(
+                currentState.copy(
+                    error =
+                        e.message
+                            ?: "Помилка обробки WebSocket"
+                )
             )
         }
+    }
 
-        val currentPrice = when {
-            bids.isNotEmpty() && asks.isNotEmpty() ->
-                (bids.first().price + asks.first().price) / 2.0
+    private fun reconnect() {
 
-            bids.isNotEmpty() ->
-                bids.first().price
+        socket?.close(
+            1000,
+            "Resynchronization"
+        )
 
-            asks.isNotEmpty() ->
-                asks.first().price
+        Thread {
+            try {
 
-            else ->
-                null
+                Thread.sleep(1000)
+
+                val snapshot =
+                    api.getOrderBook(
+                        symbol = "BTCUSDT",
+                        limit = 1000
+                    )
+
+                synchronized(this) {
+
+                    bids.clear()
+                    asks.clear()
+
+                    snapshot.bids.forEach { item ->
+
+                        if (item.size >= 2) {
+
+                            val price =
+                                item[0].toDoubleOrNull()
+
+                            val quantity =
+                                item[1].toDoubleOrNull()
+
+                            if (
+                                price != null &&
+                                quantity != null &&
+                                quantity > 0.0
+                            ) {
+                                bids[price] = quantity
+                            }
+                        }
+                    }
+
+                    snapshot.asks.forEach { item ->
+
+                        if (item.size >= 2) {
+
+                            val price =
+                                item[0].toDoubleOrNull()
+
+                            val quantity =
+                                item[1].toDoubleOrNull()
+
+                            if (
+                                price != null &&
+                                quantity != null &&
+                                quantity > 0.0
+                            ) {
+                                asks[price] = quantity
+                            }
+                        }
+                    }
+
+                    lastUpdateId =
+                        snapshot.lastUpdateId
+
+                    initialized = true
+                }
+
+                recalculateZones()
+                connectWebSocket()
+
+            } catch (e: Exception) {
+
+                updateState(
+                    currentState.copy(
+                        isConnected = false,
+                        error =
+                            e.message
+                                ?: "Не вдалося синхронізувати стакан"
+                    )
+                )
+            }
+        }.start()
+    }
+
+    private fun recalculateZones() {
+
+        val now =
+            System.currentTimeMillis()
+
+        val bestBid =
+            synchronized(this) {
+                bids.keys.firstOrNull()
+            }
+
+        val bestAsk =
+            synchronized(this) {
+                asks.keys.firstOrNull()
+            }
+
+        if (
+            bestBid == null &&
+            bestAsk == null
+        ) {
+            return
         }
 
-        val supportZones =
-            currentPrice?.let { price ->
-                LiquidityAnalyzer.analyze(
-                    orders = bids,
-                    currentPrice = price,
-                    type = LiquidityZoneType.SUPPORT
-                )
-            } ?: emptyList()
+        val currentPrice =
+            when {
 
-        val resistanceZones =
-            currentPrice?.let { price ->
-                LiquidityAnalyzer.analyze(
-                    orders = asks,
-                    currentPrice = price,
-                    type = LiquidityZoneType.RESISTANCE
-                )
-            } ?: emptyList()
+                bestBid != null &&
+                    bestAsk != null ->
+                    (bestBid + bestAsk) / 2.0
 
-        val time = SimpleDateFormat(
-            "HH:mm:ss",
-            Locale.getDefault()
-        ).format(Date())
+                bestBid != null ->
+                    bestBid
 
-        return OrderBookState(
-            currentPrice = currentPrice,
-            bids = bids,
-            asks = asks,
-            supportZones = supportZones,
-            resistanceZones = resistanceZones,
-            isLoading = false,
-            error = null,
-            lastUpdateTime = time
+                else ->
+                    bestAsk!!
+            }
+
+        val bidOrders =
+            synchronized(this) {
+
+                bids.map {
+                    Order(
+                        price = it.key,
+                        quantity = it.value
+                    )
+                }
+            }
+
+        val askOrders =
+            synchronized(this) {
+
+                asks.map {
+                    Order(
+                        price = it.key,
+                        quantity = it.value
+                    )
+                }
+            }
+
+        val support =
+            LiquidityAnalyzer.analyze(
+                orders = bidOrders,
+                currentPrice = currentPrice,
+                type = LiquidityZoneType.SUPPORT,
+                zoneSize = currentZoneSize,
+                previousZones = previousSupportZones,
+                nowMillis = now
+            )
+
+        val resistance =
+            LiquidityAnalyzer.analyze(
+                orders = askOrders,
+                currentPrice = currentPrice,
+                type = LiquidityZoneType.RESISTANCE,
+                zoneSize = currentZoneSize,
+                previousZones = previousResistanceZones,
+                nowMillis = now
+            )
+
+        previousSupportZones =
+            support
+
+        previousResistanceZones =
+            resistance
+
+        val date =
+            SimpleDateFormat(
+                "HH:mm:ss",
+                Locale.getDefault()
+            ).format(
+                Date(now)
+            )
+
+        updateState(
+            OrderBookState(
+                currentPrice = currentPrice,
+
+                supportZones =
+                    support.sortedBy {
+                        it.distancePercent
+                    },
+
+                resistanceZones =
+                    resistance.sortedBy {
+                        it.distancePercent
+                    },
+
+                zoneSize = currentZoneSize,
+
+                isConnected = true,
+
+                isLoading = false,
+
+                error = null,
+
+                lastUpdateTime = date
+            )
+        )
+    }
+
+    private fun updateState(
+        state: OrderBookState
+    ) {
+
+        currentState = state
+
+        onStateChanged?.invoke(
+            state
         )
     }
 }
