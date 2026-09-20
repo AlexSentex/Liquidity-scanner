@@ -1,9 +1,9 @@
 package com.alexsentex.liquidityscanner.repository
 
 import com.alexsentex.liquidityscanner.analysis.LiquidityAnalyzer
+import com.alexsentex.liquidityscanner.model.LiquidityZoneType
 import com.alexsentex.liquidityscanner.model.Order
 import com.alexsentex.liquidityscanner.model.OrderBookState
-import com.alexsentex.liquidityscanner.model.LiquidityZoneType
 import com.alexsentex.liquidityscanner.network.BinanceClient
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -17,19 +17,17 @@ class OrderBookRepository {
 
         val response = api.getOrderBook(limit = 100)
 
-        val bids = response.bids.mapNotNull { item ->
+        val bids: List<Order> = response.bids.mapNotNull { item ->
 
             if (item.size < 2) {
                 return@mapNotNull null
             }
 
-            val price =
-                item[0].toDoubleOrNull()
-                    ?: return@mapNotNull null
+            val price = item[0].toDoubleOrNull()
+                ?: return@mapNotNull null
 
-            val quantity =
-                item[1].toDoubleOrNull()
-                    ?: return@mapNotNull null
+            val quantity = item[1].toDoubleOrNull()
+                ?: return@mapNotNull null
 
             Order(
                 price = price,
@@ -37,19 +35,17 @@ class OrderBookRepository {
             )
         }
 
-        val asks = response.asks.mapNotNull { item ->
+        val asks: List<Order> = response.asks.mapNotNull { item ->
 
             if (item.size < 2) {
                 return@mapNotNull null
             }
 
-            val price =
-                item[0].toDoubleOrNull()
-                    ?: return@mapNotNull null
+            val price = item[0].toDoubleOrNull()
+                ?: return@mapNotNull null
 
-            val quantity =
-                item[1].toDoubleOrNull()
-                    ?: return@mapNotNull null
+            val quantity = item[1].toDoubleOrNull()
+                ?: return@mapNotNull null
 
             Order(
                 price = price,
@@ -58,7 +54,6 @@ class OrderBookRepository {
         }
 
         val currentPrice = when {
-
             bids.isNotEmpty() && asks.isNotEmpty() ->
                 (bids.first().price + asks.first().price) / 2.0
 
@@ -73,38 +68,34 @@ class OrderBookRepository {
         }
 
         val supportZones =
-            currentPrice?.let {
+            currentPrice?.let { price ->
                 LiquidityAnalyzer.analyze(
                     orders = bids,
-                    currentPrice = it,
+                    currentPrice = price,
                     type = LiquidityZoneType.SUPPORT
                 )
             } ?: emptyList()
 
         val resistanceZones =
-            currentPrice?.let {
+            currentPrice?.let { price ->
                 LiquidityAnalyzer.analyze(
                     orders = asks,
-                    currentPrice = it,
+                    currentPrice = price,
                     type = LiquidityZoneType.RESISTANCE
                 )
             } ?: emptyList()
 
-        val time =
-            SimpleDateFormat(
-                "HH:mm:ss",
-                Locale.getDefault()
-            ).format(Date())
+        val time = SimpleDateFormat(
+            "HH:mm:ss",
+            Locale.getDefault()
+        ).format(Date())
 
         return OrderBookState(
             currentPrice = currentPrice,
-
             bids = bids,
             asks = asks,
-
             supportZones = supportZones,
             resistanceZones = resistanceZones,
-
             isLoading = false,
             error = null,
             lastUpdateTime = time
