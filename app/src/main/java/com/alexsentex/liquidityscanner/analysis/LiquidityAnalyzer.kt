@@ -7,42 +7,27 @@ import kotlin.math.abs
 
 object LiquidityAnalyzer {
 
-    /*
-     * Розмір однієї цінової зони у відсотках.
-     *
-     * Наприклад:
-     * BTC = $100 000
-     * ZONE_SIZE_PERCENT = 0.25
-     *
-     * Одна зона буде приблизно $250 шириною.
-     */
-    private const val ZONE_SIZE_PERCENT = 0.25
-
-    /*
-     * Мінімальна кількість рівнів у зоні.
-     *
-     * Якщо в зоні є хоча б один рівень,
-     * вона все одно може бути врахована.
-     */
-    private const val MIN_LEVELS = 1
-
-    /*
-     * Кількість зон, які показуємо на екрані.
-     */
-    const val MAX_ZONES = 8
-
     fun analyze(
         orders: List<Order>,
         currentPrice: Double,
-        type: LiquidityZoneType
+        type: LiquidityZoneType,
+        zoneSize: Double,
+        previousZones: List<LiquidityZone>,
+        nowMillis: Long
     ): List<LiquidityZone> {
 
-        if (orders.isEmpty() || currentPrice <= 0.0) {
+        if (
+            orders.isEmpty() ||
+            currentPrice <= 0.0 ||
+            zoneSize <= 0.0
+        ) {
             return emptyList()
         }
 
-        val filteredOrders = orders.filter { order ->
+        val filtered = orders.filter { order ->
+
             when (type) {
+
                 LiquidityZoneType.SUPPORT ->
                     order.price < currentPrice
 
@@ -51,116 +36,188 @@ object LiquidityAnalyzer {
             }
         }
 
-        if (filteredOrders.isEmpty()) {
+        if (filtered.isEmpty()) {
             return emptyList()
         }
 
-        val zoneSize = currentPrice * ZONE_SIZE_PERCENT / 100.0
+        val groups = filtered.groupBy { order ->
 
-        if (zoneSize <= 0.0) {
-            return emptyList()
-        }
+            val distance =
+                when (type) {
 
-        data class ZoneAccumulator(
-            val index: Int,
-            val orders: MutableList<Order> = mutableListOf()
-        )
+                    LiquidityZoneType.SUPPORT ->
+                        currentPrice - order.price
 
-        val zones = mutableMapOf<Int, ZoneAccumulator>()
-
-        filteredOrders.forEach { order ->
-
-            val distance = when (type) {
-                LiquidityZoneType.SUPPORT ->
-                    currentPrice - order.price
-
-                LiquidityZoneType.RESISTANCE ->
-                    order.price - currentPrice
-            }
-
-            val index = (distance / zoneSize).toInt()
-
-            zones.getOrPut(index) {
-                ZoneAccumulator(index)
-            }.orders.add(order)
-        }
-
-        val rawZones = zones.values
-            .filter { it.orders.size >= MIN_LEVELS }
-            .mapNotNull { zone ->
-
-                if (zone.orders.isEmpty()) {
-                    return@mapNotNull null
+                    LiquidityZoneType.RESISTANCE ->
+                        order.price - currentPrice
                 }
 
-                val prices = zone.orders.map { it.price }
+            (distance / zoneSize).toInt()
+        }
 
-                val totalQuantity =
-                    zone.orders.sumOf { it.quantity }
+        val rawZones = groups.mapNotNull { (_, group) ->
 
-                val totalUsdt =
-                    zone.orders.sumOf { it.totalUsdt }
-
-                if (totalQuantity <= 0.0) {
-                    return@mapNotNull null
-                }
-
-                val lowerPrice = prices.minOrNull() ?: return@mapNotNull null
-                val upperPrice = prices.maxOrNull() ?: return@mapNotNull null
-
-                val centerPrice =
-                    zone.orders.sumOf { it.price * it.quantity } /
-                            totalQuantity
-
-                val distancePercent =
-                    abs(centerPrice - currentPrice) /
-                            currentPrice * 100.0
-
-                LiquidityZone(
-                    type = type,
-                    lowerPrice = lowerPrice,
-                    upperPrice = upperPrice,
-                    centerPrice = centerPrice,
-                    totalQuantity = totalQuantity,
-                    totalUsdt = totalUsdt,
-                    levelCount = zone.orders.size,
-                    strength = totalQuantity,
-                    distancePercent = distancePercent
-                )
+            if (group.isEmpty()) {
+                return@mapNotNull null
             }
+
+            val totalQuantity =
+                group.sumOf { it.quantity }
+
+            if (totalQuantity <= 0.0) {
+                return@mapNotNull null
+            }
+
+            val totalUsdt =
+                group.sumOf { it.totalUsdt }
+
+            val lowerPrice =
+                group.minOf { it.price }
+
+            val upperPrice =
+                group.maxOf { it.price }
+
+            val centerPrice =
+                group.sumOf {
+                    it.price * it.quantity
+                } / totalQuantity
+
+            val distancePercent =
+                abs(centerPrice - currentPrice) /
+                    currentPrice * 100.0
+
+            LiquidityZone(
+                type = type,
+
+                lowerPrice = lowerPrice,
+                upperPrice = upperPrice,
+                centerPrice = centerPrice,
+
+                totalQuantity = totalQuantity,
+                totalUsdt = totalUsdt,
+
+                levelCount = group.size,
+
+                strength = totalQuantity,
+
+                distancePercent = distancePercent,
+
+                firstSeenMillis = nowMillis,
+                lastSeenMillis = nowMillis,
+
+                minQuantity = totalQuantity,
+                maxQuantity = totalQuantity,
+
+                observationCount = 1,
+
+                stabilityPercent = 100.0
+            )
+        }
 
         if (rawZones.isEmpty()) {
             return emptyList()
         }
 
-        /*
-         * Середній обсяг зони використовується як базовий рівень.
-         *
-         * Наприклад:
-         *
-         * середня зона = 1 BTC
-         * конкретна зона = 5 BTC
-         *
-         * strength = 5x
-         */
         val averageQuantity =
-            rawZones.map { it.totalQuantity }.average()
+            rawZones
+                .map { it.totalQuantity }
+                .average()
 
-        return rawZones
-            .map { zone ->
+        return rawZones.map { zone ->
 
-                val relativeStrength =
+            val oldZone =
+                previousZones.minByOrNull { previous ->
+
+                    abs(
+                        previous.centerPrice -
+                            zone.centerPrice
+                    )
+                }?.takeIf { previous ->
+
+                    val maxDistance =
+                        zoneSize * 0.75
+
+                    abs(
+                        previous.centerPrice -
+                            zone.centerPrice
+                    ) <= maxDistance
+                }
+
+            if (oldZone == null) {
+
+                val strength =
                     if (averageQuantity > 0.0) {
-                        zone.totalQuantity / averageQuantity
+                        zone.totalQuantity /
+                            averageQuantity
                     } else {
-                        0.0
+                        1.0
                     }
 
                 zone.copy(
-                    strength = relativeStrength
+                    strength = strength
+                )
+
+            } else {
+
+                val quantityDifference =
+                    abs(
+                        zone.totalQuantity -
+                            oldZone.totalQuantity
+                    )
+
+                val reference =
+                    maxOf(
+                        oldZone.totalQuantity,
+                        zone.totalQuantity,
+                        0.000001
+                    )
+
+                val stability =
+                    (1.0 -
+                        quantityDifference / reference
+                    ).coerceIn(0.0, 1.0) * 100.0
+
+                val strength =
+                    if (averageQuantity > 0.0) {
+                        zone.totalQuantity /
+                            averageQuantity
+                    } else {
+                        1.0
+                    }
+
+                zone.copy(
+                    strength = strength,
+
+                    firstSeenMillis =
+                        oldZone.firstSeenMillis,
+
+                    lastSeenMillis =
+                        nowMillis,
+
+                    minQuantity =
+                        minOf(
+                            oldZone.minQuantity,
+                            zone.totalQuantity
+                        ),
+
+                    maxQuantity =
+                        maxOf(
+                            oldZone.maxQuantity,
+                            zone.totalQuantity
+                        ),
+
+                    observationCount =
+                        oldZone.observationCount + 1,
+
+                    stabilityPercent =
+                        (
+                            oldZone.stabilityPercent *
+                                oldZone.observationCount +
+                                stability
+                        ) /
+                        (oldZone.observationCount + 1)
                 )
             }
-            .sortedByDescending { it.strength }
-            .take(MAX_ZONES)
+        }
     }
 }
