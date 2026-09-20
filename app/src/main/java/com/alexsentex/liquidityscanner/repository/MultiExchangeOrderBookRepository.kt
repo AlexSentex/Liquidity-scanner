@@ -71,25 +71,14 @@ class MultiExchangeOrderBookRepository(
     }
 
     private fun recalculate() {
+
         val now = System.currentTimeMillis()
 
         val snapshots = synchronized(this) { latestSnapshots.values.toList() }
         if (snapshots.isEmpty()) return
 
-        val combinedBids = mutableMapOf<Double, Double>()
-        val combinedAsks = mutableMapOf<Double, Double>()
-
-        snapshots.forEach { snapshot ->
-            snapshot.bids.forEach { order ->
-                combinedBids[order.price] = (combinedBids[order.price] ?: 0.0) + order.quantity
-            }
-            snapshot.asks.forEach { order ->
-                combinedAsks[order.price] = (combinedAsks[order.price] ?: 0.0) + order.quantity
-            }
-        }
-
-        val bestBid = combinedBids.keys.maxOrNull()
-        val bestAsk = combinedAsks.keys.minOrNull()
+        val bestBid = snapshots.mapNotNull { it.bids.firstOrNull()?.price }.maxOrNull()
+        val bestAsk = snapshots.mapNotNull { it.asks.firstOrNull()?.price }.minOrNull()
 
         if (bestBid == null && bestAsk == null) return
 
@@ -99,8 +88,13 @@ class MultiExchangeOrderBookRepository(
             else -> bestAsk!!
         }
 
-        val bidOrders = combinedBids.map { Order(it.key, it.value) }
-        val askOrders = combinedAsks.map { Order(it.key, it.value) }
+        val bidOrders = snapshots.flatMap { snapshot ->
+            snapshot.bids.map { Order(it.price, it.quantity, snapshot.exchangeName) }
+        }
+
+        val askOrders = snapshots.flatMap { snapshot ->
+            snapshot.asks.map { Order(it.price, it.quantity, snapshot.exchangeName) }
+        }
 
         val support = LiquidityAnalyzer.analyze(
             orders = bidOrders,
