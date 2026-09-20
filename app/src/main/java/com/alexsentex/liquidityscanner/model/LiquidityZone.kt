@@ -29,7 +29,9 @@ data class LiquidityZone(
 
     val observationCount: Int,
 
-    val stabilityPercent: Double
+    val stabilityPercent: Double,
+
+    val exchanges: List<String> = emptyList()
 ) {
 
     val lifetimeMillis: Long
@@ -37,4 +39,7 @@ data class LiquidityZone(
 
     val lifetimeMinutes: Double
         get() = lifetimeMillis / 60_000.0
+
+    val exchangeCount: Int
+        get() = exchanges.size
 }
