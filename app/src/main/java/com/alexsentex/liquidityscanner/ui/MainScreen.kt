@@ -11,8 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.Button
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,13 +21,25 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.alexsentex.liquidityscanner.model.LiquidityZone
-import com.alexsentex.liquidityscanner.model.Order
 import java.util.Locale
 
-@Composable
-fun MainScreen(viewModel: MainViewModel) {
+private val zoneSizes =
+    listOf(
+        100.0,
+        250.0,
+        500.0,
+        1000.0,
+        2500.0,
+        5000.0
+    )
 
-    val state by viewModel.state.collectAsState()
+@Composable
+fun MainScreen(
+    viewModel: MainViewModel
+) {
+
+    val state by
+        viewModel.state.collectAsState()
 
     Column(
         modifier = Modifier
@@ -38,57 +49,117 @@ fun MainScreen(viewModel: MainViewModel) {
 
         Text(
             text = "BTC Liquidity Scanner",
-            style = MaterialTheme.typography.headlineSmall,
+            style =
+                MaterialTheme.typography
+                    .headlineSmall,
             fontWeight = FontWeight.Bold
         )
 
-        Text(
-            text = "Binance Spot • BTC/USDT",
-            style = MaterialTheme.typography.bodyMedium
-        )
-
         Spacer(
-            modifier = Modifier.height(16.dp)
+            modifier = Modifier.height(4.dp)
         )
 
         Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
         ) {
 
             Column {
 
                 Text(
                     text = "BTC/USDT",
-                    style = MaterialTheme.typography.labelLarge
+                    style =
+                        MaterialTheme.typography
+                            .labelLarge
                 )
 
                 Text(
                     text =
                         state.currentPrice?.let {
+
                             "$%,.2f".format(
                                 Locale.US,
                                 it
                             )
+
                         } ?: "—",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
+                    style =
+                        MaterialTheme.typography
+                            .headlineMedium,
+                    fontWeight =
+                        FontWeight.Bold
                 )
             }
 
-            Button(
-                onClick = viewModel::loadOrderBook
-            ) {
-                Text("Оновити")
+            Column {
+
+                Text(
+                    text =
+                        if (state.isConnected)
+                            "● LIVE"
+                        else
+                            "○ OFFLINE",
+                    fontWeight =
+                        FontWeight.Bold
+                )
+
+                state.lastUpdateTime?.let {
+
+                    Text(
+                        text = it,
+                        style =
+                            MaterialTheme.typography
+                                .bodySmall
+                    )
+                }
             }
         }
 
-        state.lastUpdateTime?.let {
+        Spacer(
+            modifier = Modifier.height(16.dp)
+        )
 
-            Text(
-                text = "Оновлено: $it",
-                style = MaterialTheme.typography.bodySmall
-            )
+        Text(
+            text = "Розмір діапазону",
+            style =
+                MaterialTheme.typography
+                    .titleSmall,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(
+            modifier = Modifier.height(6.dp)
+        )
+
+        LazyColumn(
+            modifier =
+                Modifier.height(48.dp)
+        ) {
+
+            items(zoneSizes) { size ->
+
+                FilterChip(
+                    selected =
+                        state.zoneSize == size,
+
+                    onClick = {
+                        viewModel
+                            .setZoneSize(size)
+                    },
+
+                    label = {
+
+                        Text(
+                            text =
+                                "${
+                                    size.toInt()
+                                } $"
+                        )
+                    }
+                )
+            }
         }
 
         Spacer(
@@ -98,275 +169,200 @@ fun MainScreen(viewModel: MainViewModel) {
         state.error?.let {
 
             Text(
-                text = "Помилка: $it",
-                color = MaterialTheme.colorScheme.error
+                text = it,
+                color =
+                    MaterialTheme.colorScheme
+                        .error
             )
 
             Spacer(
-                modifier = Modifier.height(8.dp)
+                modifier =
+                    Modifier.height(8.dp)
             )
         }
 
-        if (
-            state.isLoading &&
-            state.bids.isEmpty()
-        ) {
+        Text(
+            text = "🟢 SUPPORT",
+            style =
+                MaterialTheme.typography
+                    .titleMedium,
+            fontWeight = FontWeight.Bold
+        )
 
-            CircularProgressIndicator()
+        Spacer(
+            modifier =
+                Modifier.height(4.dp)
+        )
 
-        } else {
+        ZoneList(
+            zones = state.supportZones
+        )
 
-            LiquidityZonesSection(
-                title = "🟢 SUPPORT — ПІДТРИМКА",
-                zones = state.supportZones
-            )
+        Spacer(
+            modifier =
+                Modifier.height(16.dp)
+        )
 
-            Spacer(
-                modifier = Modifier.height(12.dp)
-            )
+        Text(
+            text = "🔴 RESISTANCE",
+            style =
+                MaterialTheme.typography
+                    .titleMedium,
+            fontWeight = FontWeight.Bold
+        )
 
-            LiquidityZonesSection(
-                title = "🔴 RESISTANCE — ОПІР",
-                zones = state.resistanceZones
-            )
+        Spacer(
+            modifier =
+                Modifier.height(4.dp)
+        )
 
-            Spacer(
-                modifier = Modifier.height(16.dp)
-            )
-
-            Text(
-                text = "СТАКАН",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(
-                modifier = Modifier.height(8.dp)
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-
-                Text(
-                    text = "BIDS — BUY",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall
-                )
-
-                Text(
-                    text = "ASKS — SELL",
-                    modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.titleSmall
-                )
-            }
-
-            Spacer(
-                modifier = Modifier.height(4.dp)
-            )
-
-            Row(
-                modifier = Modifier.weight(1f)
-            ) {
-
-                OrderColumn(
-                    orders = state.bids,
-                    modifier = Modifier.weight(1f)
-                )
-
-                OrderColumn(
-                    orders = state.asks,
-                    modifier = Modifier.weight(1f)
-                )
-            }
-        }
+        ZoneList(
+            zones = state.resistanceZones
+        )
     }
 }
 
 @Composable
-private fun LiquidityZonesSection(
-    title: String,
+private fun ZoneList(
     zones: List<LiquidityZone>
 ) {
-
-    Text(
-        text = title,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.Bold
-    )
-
-    Spacer(
-        modifier = Modifier.height(4.dp)
-    )
 
     if (zones.isEmpty()) {
 
         Text(
-            text = "Зони не знайдені",
-            style = MaterialTheme.typography.bodySmall
+            text = "Поки що немає даних",
+            style =
+                MaterialTheme.typography
+                    .bodySmall
         )
 
-    } else {
+        return
+    }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(170.dp)
-        ) {
+    LazyColumn(
+        modifier =
+            Modifier.fillMaxWidth()
+    ) {
 
-            items(zones) { zone ->
+        items(
+            items = zones.take(10)
+        ) { zone ->
 
-                LiquidityZoneRow(zone)
-
-                HorizontalDivider()
-            }
+            ZoneRow(
+                zone = zone
+            )
         }
     }
 }
 
 @Composable
-private fun LiquidityZoneRow(
+private fun ZoneRow(
     zone: LiquidityZone
 ) {
 
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                vertical = 6.dp
-            ),
-        horizontalArrangement = Arrangement.SpaceBetween
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical = 8.dp
+                )
     ) {
 
-        Column(
-            modifier = Modifier.weight(1.2f)
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
         ) {
 
             Text(
                 text =
-                    "$%,.0f".format(
+                    "$%,.0f – $%,.0f".format(
                         Locale.US,
-                        zone.centerPrice
+                        zone.lowerPrice,
+                        zone.upperPrice
                     ),
-                fontWeight = FontWeight.Bold
+                fontWeight =
+                    FontWeight.Bold
             )
 
             Text(
                 text =
-                    "%.2f%% від ціни"
-                        .format(
-                            Locale.US,
-                            zone.distancePercent
-                        ),
-                style =
-                    MaterialTheme.typography.bodySmall
+                    "%.4f BTC".format(
+                        Locale.US,
+                        zone.totalQuantity
+                    ),
+                fontWeight =
+                    FontWeight.Bold
             )
         }
 
-        Column(
-            modifier = Modifier.weight(1f)
+        Spacer(
+            modifier =
+                Modifier.height(3.dp)
+        )
+
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
         ) {
 
             Text(
                 text =
-                    "%.4f BTC"
-                        .format(
-                            Locale.US,
-                            zone.totalQuantity
-                        ),
-                fontWeight = FontWeight.Bold
+                    "%.2f%%".format(
+                        Locale.US,
+                        zone.distancePercent
+                    )
             )
 
             Text(
                 text =
-                    "$%,.0f"
-                        .format(
-                            Locale.US,
-                            zone.totalUsdt
-                        ),
-                style =
-                    MaterialTheme.typography.bodySmall
-            )
-        }
-
-        Column(
-            modifier = Modifier.weight(0.7f)
-        ) {
-
-            Text(
-                text =
-                    "%.1fx"
-                        .format(
-                            Locale.US,
-                            zone.strength
-                        ),
-                fontWeight = FontWeight.Bold
+                    "%.1fx".format(
+                        Locale.US,
+                        zone.strength
+                    )
             )
 
             Text(
                 text =
-                    "${zone.levelCount} рів.",
-                style =
-                    MaterialTheme.typography.bodySmall
+                    "%.0f%% stability".format(
+                        Locale.US,
+                        zone.stabilityPercent
+                    )
+            )
+
+            Text(
+                text =
+                    formatLifetime(
+                        zone.lifetimeMinutes
+                    )
             )
         }
     }
 }
 
-@Composable
-private fun OrderColumn(
-    orders: List<Order>,
-    modifier: Modifier = Modifier
-) {
+private fun formatLifetime(
+    minutes: Double
+): String {
 
-    LazyColumn(
-        modifier = modifier.padding(
-            horizontal = 4.dp
-        )
-    ) {
+    return when {
 
-        items(orders) { order ->
+        minutes < 1.0 ->
+            "<1 хв"
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(
-                        vertical = 4.dp
-                    )
-            ) {
+        minutes < 60.0 ->
+            "${minutes.toInt()} хв"
 
-                Text(
-                    text =
-                        "%,.2f".format(
-                            Locale.US,
-                            order.price
-                        )
-                )
+        else -> {
 
-                Text(
-                    text =
-                        "%.6f BTC"
-                            .format(
-                                Locale.US,
-                                order.quantity
-                            )
-                )
+            val hours =
+                (minutes / 60.0)
+                    .toInt()
 
-                Text(
-                    text =
-                        "$%,.2f"
-                            .format(
-                                Locale.US,
-                                order.totalUsdt
-                            )
-                )
-
-                HorizontalDivider(
-                    modifier = Modifier.padding(
-                        top = 4.dp
-                    )
-                )
-            }
+            "${hours} год"
         }
     }
 }
