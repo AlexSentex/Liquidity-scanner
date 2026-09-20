@@ -1,6 +1,9 @@
 package com.alexsentex.liquidityscanner.repository
 
 import com.alexsentex.liquidityscanner.analysis.LiquidityAnalyzer
+import com.alexsentex.liquidityscanner.analysis.TradeBuffer
+import com.alexsentex.liquidityscanner.model.AbsorptionEvent
+import com.alexsentex.liquidityscanner.model.AbsorptionOutcome
 import com.alexsentex.liquidityscanner.model.ExchangeOrderBookSnapshot
 import com.alexsentex.liquidityscanner.model.LiquidityZone
 import com.alexsentex.liquidityscanner.model.LiquidityZoneType
@@ -24,11 +27,14 @@ class MultiExchangeOrderBookRepository(
 
     private val latestSnapshots = mutableMapOf<String, ExchangeOrderBookSnapshot>()
     private val connectionStatus = mutableMapOf<String, Boolean>()
+    private val tradeBuffer = TradeBuffer()
 
     private var currentZoneSize = 500.0
 
     private var previousSupportZones = emptyList<LiquidityZone>()
     private var previousResistanceZones = emptyList<LiquidityZone>()
+
+    private val recentEvents = ArrayDeque<AbsorptionEvent>()
 
     private var currentState = OrderBookState(zoneSize = currentZoneSize)
     private var onStateChanged: ((OrderBookState) -> Unit)? = null
@@ -47,6 +53,9 @@ class MultiExchangeOrderBookRepository(
                 onUpdate = { snapshot ->
                     synchronized(this) { latestSnapshots[source.name] = snapshot }
                     recalculate()
+                },
+                onTrade = { trade ->
+                    tradeBuffer.record(trade)
                 },
                 onStatus = { connected, error ->
                     synchronized(this) { connectionStatus[source.name] = connected }
@@ -114,6 +123,9 @@ class MultiExchangeOrderBookRepository(
             nowMillis = now
         )
 
+        detectDisappearedZones(previousSupportZones, support, now)
+        detectDisappearedZones(previousResistanceZones, resistance, now)
+
         previousSupportZones = support
         previousResistanceZones = resistance
 
@@ -128,9 +140,52 @@ class MultiExchangeOrderBookRepository(
                 isConnected = connectionStatus.values.any { it },
                 isLoading = false,
                 error = null,
-                lastUpdateTime = date
+                lastUpdateTime = date,
+                recentEvents = recentEvents.toList()
             )
         )
+    }
+
+    // Порівнюємо попередні й нові зони: якщо зона з попереднього
+    // циклу зникла з нового списку — дивимось, чи на цьому ціновому
+    // рівні щойно пройшли реальні угоди (поглинання), чи ні (зняття).
+    private fun detectDisappearedZones(
+        oldZones: List<LiquidityZone>,
+        newZones: List<LiquidityZone>,
+        now: Long
+    ) {
+        val disappeared = oldZones.filter { old ->
+            newZones.none { it.lowerPrice == old.lowerPrice && it.type == old.type }
+        }
+
+        disappeared.forEach { zone ->
+            val traded = tradeBuffer.volumeInRange(zone.lowerPrice, zone.upperPrice, now)
+
+            // Поріг 50% — умовна евристика: якщо реальних угод
+            // пройшло хоча б на половину обсягу зниклої зони,
+            // вважаємо це поглинанням, а не зняттям заявок.
+            val outcome =
+                if (traded >= zone.totalQuantity * 0.5)
+                    AbsorptionOutcome.ABSORBED
+                else
+                    AbsorptionOutcome.PULLED
+
+            recentEvents.addFirst(
+                AbsorptionEvent(
+                    type = zone.type,
+                    lowerPrice = zone.lowerPrice,
+                    upperPrice = zone.upperPrice,
+                    originalQuantity = zone.totalQuantity,
+                    tradedQuantity = traded,
+                    outcome = outcome,
+                    timestampMillis = now
+                )
+            )
+
+            while (recentEvents.size > 20) {
+                recentEvents.removeLast()
+            }
+        }
     }
 
     private fun updateState(state: OrderBookState) {
