@@ -8,6 +8,8 @@ enum class LiquidityZoneType {
 data class LiquidityZone(
     val type: LiquidityZoneType,
 
+    val gridIndex: Long = 0,
+
     val lowerPrice: Double,
     val upperPrice: Double,
     val centerPrice: Double,
