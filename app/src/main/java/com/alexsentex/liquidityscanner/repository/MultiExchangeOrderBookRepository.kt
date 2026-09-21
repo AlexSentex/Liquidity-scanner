@@ -79,9 +79,18 @@ class MultiExchangeOrderBookRepository(
         sources.forEach { it.stop() }
     }
 
+    private var lastEmitMillis = 0L
+    private val minEmitIntervalMillis = 700L
+
     private fun recalculate() {
 
         val now = System.currentTimeMillis()
+
+        // Не перераховуємо й не оновлюємо UI частіше, ніж раз на 700мс —
+        // саме часті апдейти й були головною причиною "дригання" екрану.
+        if (now - lastEmitMillis < minEmitIntervalMillis) {
+            return
+        }
 
         val snapshots = synchronized(this) { latestSnapshots.values.toList() }
         if (snapshots.isEmpty()) return
@@ -129,6 +138,8 @@ class MultiExchangeOrderBookRepository(
         previousSupportZones = support
         previousResistanceZones = resistance
 
+        lastEmitMillis = now
+
         val date = SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(now))
 
         updateState(
@@ -153,17 +164,14 @@ class MultiExchangeOrderBookRepository(
         oldZones: List<LiquidityZone>,
         newZones: List<LiquidityZone>,
         now: Long
-    ) {
+        ) {
         val disappeared = oldZones.filter { old ->
-            newZones.none { it.lowerPrice == old.lowerPrice && it.type == old.type }
+            newZones.none { it.gridIndex == old.gridIndex }
         }
 
         disappeared.forEach { zone ->
             val traded = tradeBuffer.volumeInRange(zone.lowerPrice, zone.upperPrice, now)
 
-            // Поріг 50% — умовна евристика: якщо реальних угод
-            // пройшло хоча б на половину обсягу зниклої зони,
-            // вважаємо це поглинанням, а не зняттям заявок.
             val outcome =
                 if (traded >= zone.totalQuantity * 0.5)
                     AbsorptionOutcome.ABSORBED
@@ -187,7 +195,7 @@ class MultiExchangeOrderBookRepository(
             }
         }
     }
-
+        
     private fun updateState(state: OrderBookState) {
         currentState = state
         onStateChanged?.invoke(state)
