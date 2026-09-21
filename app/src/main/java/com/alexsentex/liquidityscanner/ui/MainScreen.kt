@@ -154,5 +154,330 @@ fun MainScreen(
                     label = {
 
                         Text(
-                            text =
-                                "${
+                            text = "${size.toInt()} $"
+                        )
+                    }
+                )
+            }
+        }
+
+        Spacer(
+            modifier = Modifier.height(12.dp)
+        )
+
+        state.error?.let {
+
+            Text(
+                text = it,
+                color =
+                    MaterialTheme.colorScheme
+                        .error
+            )
+
+            Spacer(
+                modifier =
+                    Modifier.height(8.dp)
+            )
+        }
+
+        Text(
+            text = "🟢 SUPPORT",
+            style =
+                MaterialTheme.typography
+                    .titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(
+            modifier =
+                Modifier.height(4.dp)
+        )
+
+        ZoneList(
+            zones = state.supportZones
+        )
+
+        Spacer(
+            modifier =
+                Modifier.height(16.dp)
+        )
+
+        Text(
+            text = "🔴 RESISTANCE",
+            style =
+                MaterialTheme.typography
+                    .titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(
+            modifier =
+                Modifier.height(4.dp)
+        )
+
+        ZoneList(
+            zones = state.resistanceZones
+        )
+
+        Spacer(
+            modifier =
+                Modifier.height(16.dp)
+        )
+
+        Text(
+            text = "📋 ОСТАННІ ПОДІЇ",
+            style =
+                MaterialTheme.typography
+                    .titleMedium,
+            fontWeight = FontWeight.Bold
+        )
+
+        Spacer(
+            modifier =
+                Modifier.height(4.dp)
+        )
+
+        EventList(
+            events = state.recentEvents
+        )
+    }
+}
+
+@Composable
+private fun ZoneList(
+    zones: List<LiquidityZone>
+) {
+
+    if (zones.isEmpty()) {
+
+        Text(
+            text = "Поки що немає даних",
+            style =
+                MaterialTheme.typography
+                    .bodySmall
+        )
+
+        return
+    }
+
+    LazyColumn(
+        modifier =
+            Modifier.fillMaxWidth()
+    ) {
+
+        items(
+            items = zones.take(10)
+        ) { zone ->
+
+            ZoneRow(
+                zone = zone
+            )
+        }
+    }
+}
+
+@Composable
+private fun ZoneRow(
+    zone: LiquidityZone
+) {
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical = 8.dp
+                )
+    ) {
+
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
+        ) {
+
+            Text(
+                text =
+                    "$%,.0f – $%,.0f".format(
+                        Locale.US,
+                        zone.lowerPrice,
+                        zone.upperPrice
+                    ),
+                fontWeight =
+                    FontWeight.Bold
+            )
+
+            Text(
+                text =
+                    "%.4f BTC".format(
+                        Locale.US,
+                        zone.totalQuantity
+                    ),
+                fontWeight =
+                    FontWeight.Bold
+            )
+        }
+
+        Spacer(
+            modifier =
+                Modifier.height(3.dp)
+        )
+
+        Row(
+            modifier =
+                Modifier.fillMaxWidth(),
+            horizontalArrangement =
+                Arrangement.SpaceBetween
+        ) {
+
+            Text(
+                text =
+                    "%.2f%%".format(
+                        Locale.US,
+                        zone.distancePercent
+                    )
+            )
+
+            Text(
+                text =
+                    "%.1fx".format(
+                        Locale.US,
+                        zone.strength
+                    )
+            )
+
+            Text(
+                text =
+                    "%.0f%% stability".format(
+                        Locale.US,
+                        zone.stabilityPercent
+                    )
+            )
+
+            Text(
+                text =
+                    formatLifetime(
+                        zone.lifetimeMinutes
+                    )
+            )
+        }
+        if (zone.exchangeCount > 0) {
+
+            Spacer(
+                modifier = Modifier.height(3.dp)
+            )
+
+            Text(
+                text = "📊 ${zone.exchanges.joinToString(", ")}",
+                style = MaterialTheme.typography.bodySmall,
+                color =
+                    if (zone.exchangeCount > 1)
+                        MaterialTheme.colorScheme.primary
+                    else
+                        MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun EventList(
+    events: List<AbsorptionEvent>
+) {
+
+    if (events.isEmpty()) {
+
+        Text(
+            text = "Подій ще не було",
+            style =
+                MaterialTheme.typography
+                    .bodySmall
+        )
+
+        return
+    }
+
+    LazyColumn(
+        modifier =
+            Modifier.fillMaxWidth()
+    ) {
+
+        items(
+            items = events.take(10)
+        ) { event ->
+
+            EventRow(
+                event = event
+            )
+        }
+    }
+}
+
+@Composable
+private fun EventRow(
+    event: AbsorptionEvent
+) {
+
+    val label =
+        if (event.outcome == AbsorptionOutcome.ABSORBED)
+            "🟢 Поглинуто"
+        else
+            "⚪ Знято"
+
+    Column(
+        modifier =
+            Modifier
+                .fillMaxWidth()
+                .padding(
+                    vertical = 6.dp
+                )
+    ) {
+
+        Text(
+            text =
+                "$label: $%,.0f – $%,.0f".format(
+                    Locale.US,
+                    event.lowerPrice,
+                    event.upperPrice
+                ),
+            fontWeight =
+                FontWeight.Bold
+        )
+
+        Text(
+            text =
+                "%.4f з %.4f BTC".format(
+                    Locale.US,
+                    event.tradedQuantity,
+                    event.originalQuantity
+                ),
+            style =
+                MaterialTheme.typography
+                    .bodySmall
+        )
+    }
+}
+
+private fun formatLifetime(
+    minutes: Double
+): String {
+
+    return when {
+
+        minutes < 1.0 ->
+            "<1 хв"
+
+        minutes < 60.0 ->
+            "${minutes.toInt()} хв"
+
+        else -> {
+
+            val hours =
+                (minutes / 60.0)
+                    .toInt()
+
+            "${hours} год"
+        }
+    }
+}
