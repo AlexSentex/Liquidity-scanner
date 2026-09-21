@@ -8,9 +8,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -51,227 +52,160 @@ fun MainScreen(
 
         Text(
             text = "BTC Liquidity Scanner",
-            style =
-                MaterialTheme.typography
-                    .headlineSmall,
+            style = MaterialTheme.typography.headlineSmall,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(
-            modifier = Modifier.height(4.dp)
-        )
+        Spacer(modifier = Modifier.height(4.dp))
 
         Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
 
             Column {
 
                 Text(
                     text = "BTC/USDT",
-                    style =
-                        MaterialTheme.typography
-                            .labelLarge
+                    style = MaterialTheme.typography.labelLarge
                 )
 
                 Text(
                     text =
                         state.currentPrice?.let {
-
-                            "$%,.2f".format(
-                                Locale.US,
-                                it
-                            )
-
+                            "$%,.2f".format(Locale.US, it)
                         } ?: "—",
-                    style =
-                        MaterialTheme.typography
-                            .headlineMedium,
-                    fontWeight =
-                        FontWeight.Bold
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
                 )
             }
 
             Column {
 
                 Text(
-                    text =
-                        if (state.isConnected)
-                            "● LIVE"
-                        else
-                            "○ OFFLINE",
-                    fontWeight =
-                        FontWeight.Bold
+                    text = if (state.isConnected) "● LIVE" else "○ OFFLINE",
+                    fontWeight = FontWeight.Bold
                 )
 
                 state.lastUpdateTime?.let {
-
                     Text(
                         text = it,
-                        style =
-                            MaterialTheme.typography
-                                .bodySmall
+                        style = MaterialTheme.typography.bodySmall
                     )
                 }
             }
         }
 
-        Spacer(
-            modifier = Modifier.height(16.dp)
-        )
+        Spacer(modifier = Modifier.height(16.dp))
 
         Text(
             text = "Розмір діапазону",
-            style =
-                MaterialTheme.typography
-                    .titleSmall,
+            style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(
-            modifier = Modifier.height(6.dp)
-        )
+        Spacer(modifier = Modifier.height(6.dp))
 
-        LazyColumn(
-            modifier =
-                Modifier.height(48.dp)
+        LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
 
             items(zoneSizes) { size ->
 
                 FilterChip(
-                    selected =
-                        state.zoneSize == size,
-
-                    onClick = {
-                        viewModel
-                            .setZoneSize(size)
-                    },
-
+                    selected = state.zoneSize == size,
+                    onClick = { viewModel.setZoneSize(size) },
                     label = {
-
-                        Text(
-                            text = "${size.toInt()} $"
-                        )
+                        Text(text = "${size.toInt()} $")
                     }
                 )
             }
         }
 
-        Spacer(
-            modifier = Modifier.height(12.dp)
-        )
+        Spacer(modifier = Modifier.height(12.dp))
 
         state.error?.let {
 
             Text(
                 text = it,
-                color =
-                    MaterialTheme.colorScheme
-                        .error
+                color = MaterialTheme.colorScheme.error
             )
 
-            Spacer(
-                modifier =
-                    Modifier.height(8.dp)
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        Row(
+            modifier =
+                Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+        ) {
+
+            ZonePanel(
+                title = "🟢 SUPPORT",
+                zones = state.supportZones,
+                modifier = Modifier.weight(1f)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            ZonePanel(
+                title = "🔴 RESISTANCE",
+                zones = state.resistanceZones,
+                modifier = Modifier.weight(1f)
             )
         }
 
-        Text(
-            text = "🟢 SUPPORT",
-            style =
-                MaterialTheme.typography
-                    .titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(4.dp)
-        )
-
-        ZoneList(
-            zones = state.supportZones
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(16.dp)
-        )
-
-        Text(
-            text = "🔴 RESISTANCE",
-            style =
-                MaterialTheme.typography
-                    .titleMedium,
-            fontWeight = FontWeight.Bold
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(4.dp)
-        )
-
-        ZoneList(
-            zones = state.resistanceZones
-        )
-
-        Spacer(
-            modifier =
-                Modifier.height(16.dp)
-        )
+        Spacer(modifier = Modifier.height(12.dp))
 
         Text(
             text = "📋 ОСТАННІ ПОДІЇ",
-            style =
-                MaterialTheme.typography
-                    .titleMedium,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(
-            modifier =
-                Modifier.height(4.dp)
-        )
+        Spacer(modifier = Modifier.height(4.dp))
 
-        EventList(
-            events = state.recentEvents
-        )
+        EventListCompact(events = state.recentEvents)
     }
 }
 
 @Composable
-private fun ZoneList(
-    zones: List<LiquidityZone>
+private fun ZonePanel(
+    title: String,
+    zones: List<LiquidityZone>,
+    modifier: Modifier = Modifier
 ) {
 
-    if (zones.isEmpty()) {
-
-        Text(
-            text = "Поки що немає даних",
-            style =
-                MaterialTheme.typography
-                    .bodySmall
-        )
-
-        return
-    }
-
-    LazyColumn(
-        modifier =
-            Modifier.fillMaxWidth()
+    Column(
+        modifier = modifier.fillMaxWidth()
     ) {
 
-        items(
-            items = zones.take(10)
-        ) { zone ->
+        Text(
+            text = title,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold
+        )
 
-            ZoneRow(
-                zone = zone
+        Spacer(modifier = Modifier.height(4.dp))
+
+        if (zones.isEmpty()) {
+
+            Text(
+                text = "Немає даних",
+                style = MaterialTheme.typography.bodySmall
             )
+
+        } else {
+
+            LazyColumn(
+                modifier = Modifier.weight(1f)
+            ) {
+
+                items(items = zones.take(15)) { zone ->
+                    ZoneRow(zone = zone)
+                }
+            }
         }
     }
 }
@@ -285,88 +219,37 @@ private fun ZoneRow(
         modifier =
             Modifier
                 .fillMaxWidth()
-                .padding(
-                    vertical = 8.dp
-                )
+                .padding(vertical = 6.dp)
     ) {
 
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween
-        ) {
-
-            Text(
-                text =
-                    "$%,.0f – $%,.0f".format(
-                        Locale.US,
-                        zone.lowerPrice,
-                        zone.upperPrice
-                    ),
-                fontWeight =
-                    FontWeight.Bold
-            )
-
-            Text(
-                text =
-                    "%.4f BTC".format(
-                        Locale.US,
-                        zone.totalQuantity
-                    ),
-                fontWeight =
-                    FontWeight.Bold
-            )
-        }
-
-        Spacer(
-            modifier =
-                Modifier.height(3.dp)
+        Text(
+            text =
+                "$%,.0f – $%,.0f".format(
+                    Locale.US,
+                    zone.lowerPrice,
+                    zone.upperPrice
+                ),
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.bodySmall
         )
 
-        Row(
-            modifier =
-                Modifier.fillMaxWidth(),
-            horizontalArrangement =
-                Arrangement.SpaceBetween
-        ) {
+        Text(
+            text = "%.4f BTC".format(Locale.US, zone.totalQuantity),
+            style = MaterialTheme.typography.bodySmall
+        )
 
-            Text(
-                text =
-                    "%.2f%%".format(
-                        Locale.US,
-                        zone.distancePercent
-                    )
-            )
+        Text(
+            text =
+                "%.2f%% · %.1fx · %.0f%%".format(
+                    Locale.US,
+                    zone.distancePercent,
+                    zone.strength,
+                    zone.stabilityPercent
+                ),
+            style = MaterialTheme.typography.bodySmall
+        )
 
-            Text(
-                text =
-                    "%.1fx".format(
-                        Locale.US,
-                        zone.strength
-                    )
-            )
-
-            Text(
-                text =
-                    "%.0f%% stability".format(
-                        Locale.US,
-                        zone.stabilityPercent
-                    )
-            )
-
-            Text(
-                text =
-                    formatLifetime(
-                        zone.lifetimeMinutes
-                    )
-            )
-        }
         if (zone.exchangeCount > 0) {
-
-            Spacer(
-                modifier = Modifier.height(3.dp)
-            )
 
             Text(
                 text = "📊 ${zone.exchanges.joinToString(", ")}",
@@ -382,7 +265,7 @@ private fun ZoneRow(
 }
 
 @Composable
-private fun EventList(
+private fun EventListCompact(
     events: List<AbsorptionEvent>
 ) {
 
@@ -390,94 +273,32 @@ private fun EventList(
 
         Text(
             text = "Подій ще не було",
-            style =
-                MaterialTheme.typography
-                    .bodySmall
+            style = MaterialTheme.typography.bodySmall
         )
 
         return
     }
 
-    LazyColumn(
-        modifier =
-            Modifier.fillMaxWidth()
-    ) {
+    Column {
 
-        items(
-            items = events.take(10)
-        ) { event ->
+        events.take(4).forEach { event ->
 
-            EventRow(
-                event = event
+            val label =
+                if (event.outcome == AbsorptionOutcome.ABSORBED)
+                    "🟢 Поглинуто"
+                else
+                    "⚪ Знято"
+
+            Text(
+                text =
+                    "$label: $%,.0f – $%,.0f (%.3f BTC)".format(
+                        Locale.US,
+                        event.lowerPrice,
+                        event.upperPrice,
+                        event.tradedQuantity
+                    ),
+                style = MaterialTheme.typography.bodySmall
             )
-        }
-    }
-}
-
-@Composable
-private fun EventRow(
-    event: AbsorptionEvent
-) {
-
-    val label =
-        if (event.outcome == AbsorptionOutcome.ABSORBED)
-            "🟢 Поглинуто"
-        else
-            "⚪ Знято"
-
-    Column(
-        modifier =
-            Modifier
-                .fillMaxWidth()
-                .padding(
-                    vertical = 6.dp
-                )
-    ) {
-
-        Text(
-            text =
-                "$label: $%,.0f – $%,.0f".format(
-                    Locale.US,
-                    event.lowerPrice,
-                    event.upperPrice
-                ),
-            fontWeight =
-                FontWeight.Bold
-        )
-
-        Text(
-            text =
-                "%.4f з %.4f BTC".format(
-                    Locale.US,
-                    event.tradedQuantity,
-                    event.originalQuantity
-                ),
-            style =
-                MaterialTheme.typography
-                    .bodySmall
-        )
-    }
-}
-
-private fun formatLifetime(
-    minutes: Double
-): String {
-
-    return when {
-
-        minutes < 1.0 ->
-            "<1 хв"
-
-        minutes < 60.0 ->
-            "${minutes.toInt()} хв"
-
-        else -> {
-
-            val hours =
-                (minutes / 60.0)
-                    .toInt()
-
-            "${hours} год"
         }
     }
 }
